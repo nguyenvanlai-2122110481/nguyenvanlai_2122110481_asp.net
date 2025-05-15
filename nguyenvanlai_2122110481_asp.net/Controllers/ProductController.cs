@@ -3,7 +3,6 @@ using Microsoft.EntityFrameworkCore;
 using nguyenvanlai_2122110481_asp.net.Data;
 using nguyenvanlai_2122110481_asp.net.DTO;
 using nguyenvanlai_2122110481_asp.net.Model;
-using System.Linq;
 
 namespace nguyenvanlai_2122110481_asp.net.Controllers
 {
@@ -22,7 +21,10 @@ namespace nguyenvanlai_2122110481_asp.net.Controllers
         [HttpGet]
         public async Task<IActionResult> GetProducts()
         {
-            var products = await _context.Products.ToListAsync();
+            var products = await _context.Products
+                .Include(p => p.Category)  // Bao gồm thông tin Category
+                .Include(p => p.User)      // Bao gồm thông tin User
+                .ToListAsync();
             return Ok(products);
         }
 
@@ -30,7 +32,10 @@ namespace nguyenvanlai_2122110481_asp.net.Controllers
         [HttpGet("{id}")]
         public async Task<IActionResult> GetProduct(int id)
         {
-            var product = await _context.Products.FindAsync(id);
+            var product = await _context.Products
+                .Include(p => p.Category)  // Bao gồm thông tin Category
+                .Include(p => p.User)      // Bao gồm thông tin User
+                .FirstOrDefaultAsync(p => p.Id == id);
             if (product == null)
                 return NotFound("Product not found.");
             return Ok(product);
@@ -38,45 +43,92 @@ namespace nguyenvanlai_2122110481_asp.net.Controllers
 
         // Thêm sản phẩm
         [HttpPost]
-        public async Task<IActionResult> CreateProduct([FromBody] ProductCreateDto dto)
+        public async Task<IActionResult> Create([FromForm] ProductCreateDto dto)
         {
-            if (dto == null || string.IsNullOrEmpty(dto.Name))
-                return BadRequest("Invalid product data.");
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
 
+            // ⚠️ Xử lý lưu ảnh
+            string imagePath = null;
+            if (dto.ImageUrl != null)
+            {
+                var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
+                if (!Directory.Exists(uploadsFolder))
+                    Directory.CreateDirectory(uploadsFolder);
+
+                var fileName = Guid.NewGuid().ToString() + Path.GetExtension(dto.ImageUrl.FileName);
+                var filePath = Path.Combine(uploadsFolder, fileName);
+
+                using (var stream = new FileStream(filePath, FileMode.Create))
+                {
+                    await dto.ImageUrl.CopyToAsync(stream);
+                }
+
+                imagePath = $"/uploads/{fileName}";
+            }
+
+            // ⚙️ Tạo đối tượng Product để lưu DB
             var product = new Product
             {
                 Name = dto.Name,
+                Description = dto.Description,
                 Price = dto.Price,
+                StockQuantity = dto.StockQuantity,
+                IsAvailable = dto.IsAvailable,
                 CategoryId = dto.CategoryId,
-                CreatedAt = DateTime.Now,
-                CreatedBy = "Admin",
-                UpdatedAt = DateTime.Now,
-                UpdatedBy = "Admin"
+                ImageUrl = imagePath,
+                CreatedBy="k",
+                UserId=1,
+                UpdatedBy="k",
             };
 
             _context.Products.Add(product);
             await _context.SaveChangesAsync();
 
-            return CreatedAtAction(nameof(GetProduct), new { id = product.Id }, product);
+            return Ok(product);
         }
-
         // Cập nhật sản phẩm
         [HttpPut("{id}")]
-        public async Task<IActionResult> UpdateProduct(int id, [FromBody] ProductUpdateDto dto)
+        public async Task<IActionResult> Update(int id, [FromForm] ProductUpdateDto dto)
         {
-            if (dto == null)
-                return BadRequest("Invalid product data.");
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
 
+            // ⚠️ Kiểm tra tồn tại sản phẩm
             var product = await _context.Products.FindAsync(id);
             if (product == null)
-                return NotFound("Product not found.");
+                return NotFound("Sản phẩm không tồn tại.");
 
+            // ⚠️ Xử lý lưu ảnh mới (nếu có)
+            string imagePath = product.ImageUrl; // Giữ ảnh cũ nếu không có ảnh mới
+            if (dto.ImageUrl != null)
+            {
+                var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
+                if (!Directory.Exists(uploadsFolder))
+                    Directory.CreateDirectory(uploadsFolder);
+
+                var fileName = Guid.NewGuid().ToString() + Path.GetExtension(dto.ImageUrl.FileName);
+                var filePath = Path.Combine(uploadsFolder, fileName);
+
+                using (var stream = new FileStream(filePath, FileMode.Create))
+                {
+                    await dto.ImageUrl.CopyToAsync(stream);
+                }
+
+                imagePath = $"/uploads/{fileName}"; // Cập nhật ảnh mới
+            }
+
+            // ⚙️ Cập nhật thông tin sản phẩm
             product.Name = dto.Name;
+            product.Description = dto.Description;
             product.Price = dto.Price;
+            product.StockQuantity = dto.StockQuantity;
+            product.IsAvailable = dto.IsAvailable;
             product.CategoryId = dto.CategoryId;
-            product.UpdatedAt = DateTime.Now;
-            product.UpdatedBy = string.IsNullOrEmpty(dto.UpdatedBy) ? "Admin" : dto.UpdatedBy;
+            product.ImageUrl = imagePath;
+            product.UpdatedBy = "k";  // Hoặc lấy từ session/user thực tế
 
+            _context.Products.Update(product);
             await _context.SaveChangesAsync();
 
             return Ok(product);
@@ -84,16 +136,16 @@ namespace nguyenvanlai_2122110481_asp.net.Controllers
 
         // Xóa sản phẩm
         [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteProduct(int id, [FromBody] ProductDeleteDto dto)
+        public async Task<IActionResult> DeleteProduct(int id)
         {
             var product = await _context.Products.FindAsync(id);
             if (product == null)
                 return NotFound("Product not found.");
 
             product.DeletedAt = DateTime.Now;
-            product.DeletedBy = string.IsNullOrEmpty(dto.DeletedBy) ? "Admin" : dto.DeletedBy;
+            product.DeletedBy = "Admin"; // Cải thiện nếu muốn lấy từ HttpContext.User
 
-            _context.Products.Remove(product); // Xóa cứng
+            _context.Products.Remove(product);  // Xóa cứng
             await _context.SaveChangesAsync();
 
             return Ok(new

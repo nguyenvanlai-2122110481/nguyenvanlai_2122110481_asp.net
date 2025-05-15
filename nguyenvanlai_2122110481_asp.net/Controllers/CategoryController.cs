@@ -17,11 +17,13 @@ namespace nguyenvanlai_2122110481_asp.net.Controllers
             _context = context;
         }
 
-        // Lấy tất cả category
+        // Lấy tất cả category (chỉ hiển thị các mục đang hoạt động)
         [HttpGet]
         public async Task<IActionResult> GetCategories()
         {
-            var categories = await _context.Categories.ToListAsync();
+            var categories = await _context.Categories
+                .Where(c => c.IsActive && c.DeletedAt == null)
+                .ToListAsync();
             return Ok(categories);
         }
 
@@ -30,8 +32,8 @@ namespace nguyenvanlai_2122110481_asp.net.Controllers
         public async Task<IActionResult> GetCategory(int id)
         {
             var category = await _context.Categories.FindAsync(id);
-            if (category == null)
-                return NotFound("Category not found.");
+            if (category == null || !category.IsActive || category.DeletedAt != null)
+                return NotFound("Category not found or has been deleted.");
             return Ok(category);
         }
 
@@ -45,11 +47,13 @@ namespace nguyenvanlai_2122110481_asp.net.Controllers
             var category = new Categories
             {
                 Name = dto.Name,
-                Description = dto.Description,
+                Description ="k",
+                ImageUrl = "k",
+                IsActive = true, // Sử dụng giá trị IsActive từ DTO
                 CreatedAt = DateTime.Now,
                 CreatedBy = "Admin",
                 UpdatedAt = DateTime.Now,
-                UpdatedBy = "Admin"
+                UpdatedBy ="Admin" ,
             };
 
             _context.Categories.Add(category);
@@ -60,14 +64,13 @@ namespace nguyenvanlai_2122110481_asp.net.Controllers
 
         // Cập nhật category
         [HttpPut("{id}")]
-        public async Task<IActionResult> UpdateCategory(int id, [FromBody] CategoryCreateDto dto)
+        public async Task<IActionResult> UpdateCategory(int id, [FromBody] CategoryUpdateDto dto)
         {
             var category = await _context.Categories.FindAsync(id);
-            if (category == null)
-                return NotFound("Category not found.");
+            if (category == null || !category.IsActive || category.DeletedAt != null)
+                return NotFound("Category not found or has been deleted.");
 
-            category.Name = dto.Name;
-            category.Description = dto.Description;
+            category.Name= dto.Name;    
             category.UpdatedAt = DateTime.Now;
             category.UpdatedBy = "Admin";
 
@@ -76,28 +79,20 @@ namespace nguyenvanlai_2122110481_asp.net.Controllers
             return Ok(category);
         }
 
-        // Xóa category
+        // Xoá mềm category
         [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteCategory(int id, [FromBody] CategoryDeleteDto dto)
+        public async Task<IActionResult> DeleteCategory(int id)
         {
             var category = await _context.Categories.FindAsync(id);
             if (category == null)
-                return NotFound("Category not found.");
+            {
+                return NotFound("Danh mục không tồn tại.");
+            }
 
-            category.DeletedAt = DateTime.Now;
-            category.DeletedBy = string.IsNullOrEmpty(dto.DeletedBy) ? "Admin" : dto.DeletedBy;
-
-            _context.Categories.Remove(category); // Hoặc soft-delete
+            _context.Categories.Remove(category);
             await _context.SaveChangesAsync();
 
-            return Ok(new
-            {
-                message = $"Category '{category.Name}' has been deleted successfully.",
-                deletedAt = category.DeletedAt,
-                deletedBy = category.DeletedBy,
-                data = category
-            });
+            return Ok("Danh mục đã được xoá khỏi cơ sở dữ liệu.");
         }
-
     }
 }
